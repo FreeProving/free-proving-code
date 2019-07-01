@@ -1,38 +1,40 @@
 Require Import FunctionalExtensionality.
+Require Export Strings.String.
 
 Require Export FreeProving.Base.
+Require Import FreeProving.Classes.
 Require Import FreeProving.Free.
 
 Set Implicit Arguments.
 
 Module Zero.
 
-  Definition Zero (A : Type) := Void.
+  Inductive Zero (A : Type) : Type := .
 
-  Definition S__Zero := Void.
-  Definition P__Zero (s : S__Zero) := Void.
-  Definition E__Zero (A : Type) := Ext S__Zero P__Zero A.
+  Global Instance C__None : Container :=
+    {
+      Shape := Void;
+      Pos   := fun _ => Void;
+    }.
 
-  Definition toZero A (e : E__Zero A) : Zero A :=
+  Definition toZero (A : Type) (e : Ext C__None A) : Zero A :=
     match e with
-    | ext s _ => match s with end
+    | ext s p => match s with end
     end.
 
-  Definition fromZero A (z : Zero A) : E__Zero A :=
+  Definition fromZero (A : Type) (z : Zero A) : Ext C__None A :=
     match z with end.
 
-  Global Instance C__Zero : Container Zero :=
+  Global Instance Iso__None : Iso Zero C__None :=
     {
-      Shape := S__Zero;
-      Pos := P__Zero;
-      to := toZero;
+      to   := toZero;
       from := fromZero
     }.
   Proof.
-    - intros.
+    - intros A fx.
       destruct fx.
-    - intros.
-      destruct e.
+    - intros A e.
+      destruct e as [s pf].
       destruct s.
   Defined.
 
@@ -87,54 +89,48 @@ Module Zero.
 
   Definition zero_to_id A (zx : Zero A) : Id A := match zx with end.
 
-  Definition free_to_id A (fx : Free C__Zero A) : Id A := induce zero_to_id fx.
+  Definition free_to_id A (fx : Free C__None A) : Id A := induce zero_to_id fx.
 
 End Zero.
 
 Module One.
 
-  Definition One (A : Type) := unit.
+  Inductive One (A : Type) : Type := one : One A.
 
-  Definition S__One := unit.
-  Definition P__One (s : S__One) := Void.
-  Definition E__One A := Ext S__One P__One A.
+  Arguments one [_].
 
-  Definition to__One A (e : E__One A) : One A :=
-    tt.
-
-  Definition from__One A (z : One A) : E__One A :=
-    ext tt (fun p : P__One tt => match p with end).
-
-  Lemma to_from__One : forall A (ox : One A), to__One (from__One ox) = ox.
-  Proof.
-    intros A ox.
-    destruct ox.
-    unfold from__One.
-    unfold to__One.
-    reflexivity.
-  Qed.
-
-  Lemma from_to__One : forall A (e : E__One A), from__One (to__One e) = e.
-  Proof.
-    intros A e.
-    destruct e.
-    destruct s.
-    unfold to__One.
-    unfold from__One.
-    apply f_equal.
-    extensionality p.
-    destruct p.
-  Qed.
-
-  Instance C__One : Container One :=
+  Global Instance C__Partial : Container :=
     {
-      Shape := S__One;
-      Pos := P__One;
-      to := to__One;
-      from := from__One;
-      to_from := to_from__One;
-      from_to := from_to__One
+      Shape := unit;
+      Pos   := fun _ => Void;
     }.
+
+  Definition toOne (B : Type) (e : Ext C__Partial B) : One B :=
+    one.
+
+  Definition fromOne (B : Type) (z : One B) : Ext C__Partial B :=
+    match z with
+    | one => ext tt (fun p => match p with end)
+    end.
+
+  Global Instance Iso__Partial : Iso One C__Partial :=
+    {
+      to   := toOne;
+      from := fromOne
+    }.
+  Proof.
+    - intros A fx.
+      destruct fx.
+      simpl.
+      reflexivity.
+    - intros A e.
+      destruct e as [s pf].
+      simpl.
+      destruct s.
+      f_equal.
+      extensionality y.
+      destruct y.
+  Defined.
 
   Section MonadInstance.
 
@@ -192,12 +188,133 @@ Module One.
 
   Definition one_to_maybe A (ox : One A) : Maybe A := nothing.
 
-  Definition free_to_maybe A (fx : Free C__One A) : Maybe A := induce one_to_maybe fx.
+  Definition free_to_maybe A (fx : Free C__Partial A) : Maybe A := induce one_to_maybe fx.
 
 End One.
 
 Module Const.
+  
+  Inductive Const (E A : Type) : Type := const : E -> Const E A.
+  Global Arguments const [_] [_].
 
-  Inductive Const (B A : Type) := const : B -> Const B A.
+  Definition S__Const (E : Type) := E.
+  Definition P__Const (E : Type) (s : S__Const E) : Type := Void.
+
+  Global Instance C__Error' (E : Type) : Container :=
+    {
+      Shape := E;
+      Pos   := fun _ => Void;
+    }.
+
+  Definition toConst (E B : Type) (e : Ext (C__Error' E) B) : Const E B :=
+    match e with
+    | ext s _ => const s
+    end.
+
+  Definition fromConst (E B : Type) (c : Const E B) : Ext (C__Error' E) B :=
+    match c with
+    | const s => ext (s : @Shape (C__Error' E)) (fun p => match p with end)
+    end.
+
+  Global Instance Iso__Error' (E : Type) : Iso (Const E) (C__Error' E) :=
+    {
+      to   := @toConst E;
+      from := @fromConst E
+    }.
+  Proof.
+    - intros A cx.
+      destruct cx; simpl.
+      reflexivity.
+    - intros A ext.
+      destruct ext; simpl.
+      unfold fromConst.
+      f_equal.
+      extensionality p1.
+      destruct p1.
+  Defined.
+
+  Definition C__Error := C__Error' string.
 
 End Const.
+
+Module Pair.
+
+  Inductive pair (A : Type) : Type :=
+  | pr : A -> A -> pair A.
+
+  Global Instance C__ND : Container :=
+    {
+      Shape := unit;
+      Pos   := fun _ => bool;
+    }.
+
+  Definition toPair (A : Type) (e : Ext C__ND A) : pair A :=
+    match e with
+    | ext tt pf => pr (pf true) (pf false)
+    end.
+
+  Definition fromPair (A : Type) (p : pair A) : Ext C__ND A :=
+    match p with
+    | pr x y => ext tt (fun p => match p with
+                             | true => x
+                             | false => y
+                             end)
+    end.
+
+  Global Instance Iso__ND : Iso pair C__ND :=
+    {
+      to   := toPair;
+      from := fromPair
+    }.
+  Proof.
+    - intros B ex.
+      destruct ex; simpl.
+      reflexivity.
+    - intros B ext.
+      destruct ext as [s pf]; simpl.
+      destruct s; simpl.
+      f_equal.
+      extensionality p.
+      dependent destruction p; reflexivity.
+  Defined.
+
+End Pair.
+
+Module Log.
+
+  Inductive Log (A : Type) : Type :=
+  | log : string -> A -> Log A.
+
+  Global Instance C__Trace : Container :=
+    {
+      Shape := string;
+      Pos := fun _ => unit;
+    }.
+
+  Definition toLog A (e : Ext C__Trace A) : Log A :=
+    match e with
+    | ext str p => log str (p tt)
+    end.
+
+  Definition fromLog A (t : Log A) : Ext C__Trace A :=
+    match t with
+    | log str x => ext str (fun p => x)
+    end.
+
+  Global Instance Iso__Log : Iso Log C__Trace :=
+    {
+      to := toLog;
+      from := fromLog
+    }.
+  Proof.
+    - intros A t.
+      destruct t.
+      reflexivity.
+    - intros A e.
+      destruct e as [s pf]; simpl.
+      apply f_equal.
+      extensionality p; destruct p.
+      reflexivity.
+  Defined.
+
+End Log.

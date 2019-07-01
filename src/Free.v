@@ -2,200 +2,146 @@ Require Export FunctionalExtensionality.
 Require Export Program.Equality.
 
 Require Export FreeProving.Base.
+Require Import FreeProving.Classes.
 
 Set Implicit Arguments.
+Unset Elimination Schemes.
 
 Section Free.
 
-  Variable F : Type -> Type.
-
-  Inductive Free (C__F : Container F) A :=
-  | pure : A -> Free C__F A
-  | impure : Ext Shape Pos (Free C__F A) -> Free C__F A.
+  Inductive Free (C : Container) (A : Type) : Type :=
+  | pure : A -> Free C A
+  | impure : Ext C (Free C A) -> Free C A.
 
 End Free.
 
-Arguments pure [_] [_] [_] _.
+Arguments pure [_] [_] _.
+Arguments impure [_] [_].
 
-Section Free_Rect.
+Section Free_Principles.
 
-  Variable F : Type -> Type.
-  Variable C__F : Container F.
-  Variable A : Type.
-  Variable P : Free C__F A -> Type.
+  Variable C : Container.
 
-  Variable Pure_rect : forall (x : A), P (pure x).
-  Variable Impure_rect : forall (s : Shape) (pf : Pos s -> Free C__F A),
-      (forall p, P (pf p)) -> P (impure (ext s pf)).
+  Section Free_Rect.
 
-  Fixpoint Free_Rect (fx : Free C__F A) : P fx :=
-    match fx with
-    | pure x => Pure_rect x
-    | impure (ext s pf) =>
-      Impure_rect s pf (fun p : Pos s => Free_Rect (pf p))
-    end.
+    Variable A : Type.
+    Variable P__rect : Free C A -> Type.
+    Variable Pure_rect : forall (x : A), P__rect (pure x).
+    Variable Impure_rect : forall (s : Shape) (pf : Pos s -> Free C A),
+        (forall p, P__rect (pf p)) -> P__rect (impure (ext s pf)).
 
-End Free_Rect.
-
-Section Free_Ind.
-
-  Variable F : Type -> Type.
-  Variable C__F : Container F.
-  Variable A : Type.
-  Variable P : Free C__F A -> Prop.
-
-  Variable Pure_ind : forall (x : A), P (pure x).
-  Variable Impure_ind : forall (s : Shape) (pf : Pos s -> Free C__F A),
-      (forall p, P (pf p)) -> P (impure (ext s pf)).
-
-  Definition Free_Ind (fx : Free C__F A) : P fx := Free_Rect P Pure_ind Impure_ind fx.
-
-End Free_Ind.
-
-Section MonadInstance.
-
-  Variable F : Type -> Type.
-  Variable C__F : Container F.
-
-  Definition cmap A B (f : A -> B) (x : Ext Shape Pos A) : Ext Shape Pos B :=
-    match x with
-    | ext s pf => ext s (fun x => f (pf x))
-    end.
-
-  Section fbind.
-
-    Variable A B: Type.
-    Variable f: A -> Free C__F B.
-
-    Fixpoint free_bind' (ffA: Free C__F A) :=
-      match ffA with
-      | pure x => f x
-      | impure e => impure (cmap free_bind' e)
+    Fixpoint Free_Rect (fx : Free C A) : P__rect fx :=
+      match fx with
+      | pure x => Pure_rect x
+      | impure (ext s pf) =>
+        Impure_rect s pf (fun p : Pos s => Free_Rect (pf p))
       end.
 
-  End fbind.
+  End Free_Rect.
 
-  Definition free_bind A B (ffA: Free C__F A) (f: A -> Free C__F B) : Free C__F B :=
-    free_bind' f ffA.
+  Section Free_Ind.
+
+    Variable A : Type.
+    Variable P__ind : Free C A -> Prop.
+    Variable Pure_ind : forall (x : A), P__ind (pure x).
+    Variable Impure_ind : forall (s : Shape) (pf : Pos s -> Free C A),
+        (forall p, P__ind (pf p)) -> P__ind (impure (ext s pf)).
+
+    Check Pure_ind.
+
+    Definition Free_ind (fx : Free C A) : P__ind fx :=
+      Free_Rect P__ind Pure_ind Impure_ind fx.
+
+  End Free_Ind.
+
+End Free_Principles.
+
+Section Free_Instances.
+  Variable C : Container.
+
+  Section FunctorInstance.
+
+    Section fmap.
+
+      Variable A B : Type.
+      Variable f : A -> B.
+
+      Fixpoint freeMap (fx : Free C A) :=
+        match fx with
+        | pure x => pure (f x)
+        | impure (ext s pf) => impure (ext s (fun p => freeMap (pf p)))
+        end.
+
+    End fmap.
+
+  End FunctorInstance.
+
+  Section MonadInstance.
+
+    Section fbind.
+
+      Variable A B : Type.
+      Variable f : A -> Free C B.
+
+      Fixpoint free_bind' (ffA : Free C A) :=
+        match ffA with
+        | pure x => f x
+        | impure (ext s pf) => impure (ext s (fun p => free_bind' (pf p)))
+        end.
+
+    End fbind.
+
+    Definition free_bind (A B : Type) (ffA : Free C A) (f : A -> Free C B) :=
+      free_bind' f ffA.
+
+  End MonadInstance.
+
+End Free_Instances.
+
+Module Free_Notation.
 
   Notation "mx >>= f" := (free_bind mx f) (at level 50, left associativity).
   Notation "'do' x <- mx ; f" :=
     (free_bind mx (fun x => f))
       (at level 50, x ident, mx at level 40, f at level 50).
 
-  Lemma pure_bind :
-    forall A B (x: A) (f: A -> Free C__F B), pure x >>= f = f x.
-  Proof.
-    reflexivity.
-  Qed.
-
-  Lemma bind_pure :
-    forall A (fA: Free C__F A), fA >>= (fun x => pure x) = fA.
-  Proof.
-    induction fA using Free_Ind.
-    - reflexivity.
-    - simpl free_bind.
-      repeat apply f_equal.
-      apply functional_extensionality.
-      apply H.
-  Qed.
-
-  Lemma free_bind_assoc :
-    forall A B C (fa : Free C__F A) (f: A -> Free C__F B) (g: B -> Free C__F C),
-      fa >>= (fun y => f y >>= g) = fa >>= f >>= g.
-  Proof.
-    intros.
-    induction fa using Free_Ind.
-    - econstructor.
-    - simpl free_bind.
-      repeat apply f_equal.
-      apply functional_extensionality.
-      apply H.
-  Qed.
-
-  Global Instance free_monad : Monad (Free C__F) :=
-    {
-      ret := @pure F C__F;
-      bind := fun _ _ xs f => free_bind xs f;
-      left_unit := pure_bind;
-      right_unit := bind_pure;
-      bind_assoc := free_bind_assoc
-    }.
-
-End MonadInstance.
-Arguments cmap [_] [_] [_] [_].
-
-Notation "mx >>= f" := (free_bind mx f) (at level 50, left associativity).
-Notation "'do' x <- mx ; f" :=
-  (free_bind mx (fun x => f))
-    (at level 50, x ident, mx at level 40, f at level 50).
+End Free_Notation.
 
 Section ForFree.
 
-  Variable F : Type -> Type.
-  Variable C__F : Container F.
+  Import Free_Notation.
 
-  Inductive ForFree A (P : A -> Prop) : Free C__F A -> Prop :=
+  Variable C : Container.
+
+  Inductive ForFree (A : Type) (P : A -> Prop) : Free C A -> Prop :=
   | For_pure : forall (x : A), P x -> ForFree P (pure x)
-  | For_impure : forall (s : Shape) (pf : Pos s -> Free C__F A),
+  | For_impure : forall (s : Shape) (pf : Pos s -> Free C A),
       (forall p, ForFree P (pf p)) -> ForFree P (impure (ext s pf)).
-
-  Lemma ForFree_bind :
-    forall A B (fx : Free C__F A) (f: A -> Free C__F B) (g: A -> Free C__F B),
-      ForFree (fun x => f x = g x) fx -> fx >>= f = fx >>= g.
-  Proof.
-    intros.
-    induction H; simpl.
-    - apply H.
-    - repeat apply f_equal.
-      apply functional_extensionality; intros.
-      apply H0.
-  Qed.
-
-  Inductive InFree A : A -> Free C__F A -> Prop :=
-  | In_Pure : forall x, InFree x (pure x)
-  | In_Impure: forall x (s : Shape) (pf : Pos s -> Free C__F A),
-      (exists p, InFree x (pf p)) -> InFree x (impure (ext s pf)).
-
-  Lemma ForFree_forall :
-    forall A (P : A -> Prop) (fx : Free C__F A),
-      ForFree P fx <-> (forall (x : A), InFree x fx -> P x).
-  Proof.
-    intros A P fx.
-    intuition.
-    - induction H.
-      + inversion H0; subst; assumption.
-      + dependent destruction H0. destruct H0.
-        apply H1 with (p := x0). apply H0.
-    - induction fx using Free_Ind; simpl.
-      + apply For_pure. apply H. apply In_Pure.
-      + apply For_impure. intros p. apply H0. intros x HIn.
-        apply H. apply In_Impure. exists p. apply HIn.
-  Qed.
 
 End ForFree.
 
 Section Fold.
 
   Variable F : Type -> Type.
-  Variable C__F : Container F.
+  Variable C : Container.
+  Variable C__Iso : Iso F C.
   Variable F__F : Functor F.
 
-  Fixpoint fold_free A B (pur : A -> B) (imp : F B -> B) (fx : Free C__F A) : B :=
+  Fixpoint fold_free A B (pur : A -> B) (imp : F B -> B) (fx : Free C A) : B :=
     match fx with
     | pure x => pur x
-    | impure e => imp (to (cmap (fold_free pur imp) e))
+    | impure (ext s pf) => imp (to (ext s (fun p => fold_free pur imp (pf p))))
     end.
 
   Variable M : Type -> Type.
   Variable M__M : Monad M.
 
-  Definition induce A (f : forall X, F X -> M X) (fx : Free C__F A) : M A :=
+  Definition induce A (f : forall X, F X -> M X) (fx : Free C A) : M A :=
     fold_free (fun x => ret x) (fun x => join (f (M A) x)) fx.
 
 End Fold.
 
-Arguments induce [_] [_] [_] [_] [_].
+Arguments induce [_] [_] [_] [_] [_] [_].
 
 Module Tactics.
 

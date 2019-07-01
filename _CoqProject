@@ -1,8 +1,13 @@
 -R src FreeProving
 
 src/Base.v
+src/Classes.v
 src/Free.v
 src/Effects.v
 src/List.v
-src/AppendAssoc.v
-src/Queue.v
+src/Primitives.v
+src/Seq.v
+src/Simple.v
+src/State.v
+src/StrictFields.v
+src/Dummy.v
